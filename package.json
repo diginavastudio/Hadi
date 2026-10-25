@@ -1,0 +1,23 @@
+{
+  "name": "koperasi-mikro",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test:finance": "node --experimental-strip-types scripts/test-finance.ts"
+  },
+  "dependencies": {
+    "@types/react-dom": "^19.3.0",
+    "googleapis": "^188.0.0",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}
