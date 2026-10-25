@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b1f24; --muted:#667085; --line:#e4e7ec; --brand:#0f766e; --bad:#b42318; --warn:#b54708; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  nav { display:flex; gap:4px; flex-wrap:wrap; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); align-items:center; position:sticky; top:0; }
+  nav b { margin-right:12px; color:var(--brand); }
+  nav button { background:none; color:var(--ink); border:0; padding:6px 10px; border-radius:6px; font-size:14px; cursor:pointer; }
+  nav button.on { background:var(--brand); color:#fff; }
+  main { max-width:1080px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:8px 0 16px; } h2 { font-size:16px; margin:20px 0 8px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card .k { color:var(--muted); font-size:12px; } .card .v { font-size:20px; font-weight:bold; margin-top:4px; }
+  .note { font-size:12px; color:var(--muted); margin-top:4px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); } th { background:#fafafa; color:var(--muted); font-size:12px; }
+  .r { text-align:right; }
+  form { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); gap:4px; }
+  input, select { padding:8px; border:1px solid var(--line); border-radius:6px; font-size:14px; }
+  button.aksi { padding:9px 14px; background:var(--brand); color:#fff; border:0; border-radius:6px; font-size:14px; cursor:pointer; }
+  button.aksi[disabled] { opacity:.5; cursor:wait; }
+  .err { background:#fef3f2; color:var(--bad); border:1px solid #fecdca; padding:10px; border-radius:8px; margin-bottom:12px; }
+  .ok { background:#ecfdf3; color:#067647; border:1px solid #abefc6; padding:10px; border-radius:8px; margin-bottom:12px; }
+  .bad { color:var(--bad); font-weight:bold; } .warn { color:var(--warn); font-weight:bold; }
+  a.lnk { color:var(--brand); cursor:pointer; text-decoration:underline; }
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<main id="main">Memuat...</main>
+<script>
+var S = null, VIEW = 'dashboard', DETAIL = null, PESAN = null;
+
+function h(tag, props) {
+  var e = document.createElement(tag);
+  props = props || {};
+  for (var k in props) {
+    if (k === 'class') e.className = props[k];
+    else if (k.indexOf('on') === 0) e[k] = props[k];
+    else e.setAttribute(k, props[k]);
+  }
+  for (var i = 2; i < arguments.length; i++) {
+    [].concat(arguments[i]).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return;
+      e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    });
+  }
+  return e;
+}
+function rp(v) { return 'Rp' + Math.round(v).toLocaleString('id-ID'); }
+function pct(v) { return v.toLocaleString('id-ID', { maximumFractionDigits: 1 }) + '%'; }
+function call(fn) {
+  var args = [].slice.call(arguments, 1);
+  return new Promise(function (res, rej) {
+    var r = google.script.run.withSuccessHandler(res).withFailureHandler(function (e) { rej(new Error(e && e.message ? e.message.replace(/^Error:\s*/, '') : String(e))); });
+    r[fn].apply(r, args);
+  });
+}
+function muat() {
+  return call('getState').then(function (s) { S = s; draw(); }).catch(function (e) {
+    document.getElementById('main').replaceChildren(h('div', { class: 'err' }, 'Gagal memuat: ' + e.message));
+  });
+}
+function pesanBox() {
+  if (!PESAN) return null;
+  var b = h('div', { class: PESAN.ok ? 'ok' : 'err' }, PESAN.teks);
+  PESAN = null;
+  return b;
+}
+function kirim(fn, data, sukses) {
+  return function (ev) {
+    ev.preventDefault();
+    var btn = ev.target.querySelector('button.aksi');
+    btn.disabled = true;
+    call(fn, data(ev.target)).then(function () { DETAIL = null; PESAN = { ok: true, teks: sukses }; return muat(); })
+      .catch(function (e) { PESAN = { ok: false, teks: e.message }; draw(); });
+  };
+}
+function f(form, name) { return form.elements[name].value; }
+function tabel(kepala, baris, kanan) {
+  kanan = kanan || [];
+  return h('table', {},
+    h('thead', {}, h('tr', {}, kepala.map(function (k, i) { return h('th', { class: kanan.indexOf(i) >= 0 ? 'r' : '' }, k); }))),
+    h('tbody', {}, baris));
+}
+function kartu(k, v, cls, catatan) {
+  return h('div', { class: 'card' }, h('div', { class: 'k' }, k), h('div', { class: 'v ' + (cls || '') }, v), catatan ? h('div', { class: 'note' }, catatan) : null);
+}
+
+function draw() {
+  var tabs = [['dashboard', 'Dashboard'], ['anggota', 'Anggota'], ['pinjaman', 'Pinjaman'], ['setoran', 'Setoran'], ['parameter', 'Parameter']];
+  document.getElementById('nav').replaceChildren(h('b', {}, 'Koperasi Mikro'),
+    tabs.map(function (t) { return h('button', { class: VIEW === t[0] ? 'on' : '', onclick: function () { VIEW = t[0]; DETAIL = null; draw(); } }, t[1]); }),
+    h('button', { onclick: function () { muat(); } }, 'Muat ulang'));
+  var m = document.getElementById('main');
+  var views = { dashboard: vDashboard, anggota: vAnggota, pinjaman: vPinjaman, setoran: vSetoran, parameter: vParameter };
+  m.replaceChildren(pesanBox(), (VIEW === 'pinjaman' && DETAIL) ? vDetail() : views[VIEW]());
+}
+
+function vDashboard() {
+  var d = S.dashboard, e = S.ekonomi, be = S.breakEven, sy = S.syarat;
+  var baris = [
+    ['Bunga flat', rp(e.bunga)], ['Total kewajiban peminjam', rp(e.totalKewajiban)], ['Angsuran mingguan', rp(e.angsuran)],
+    ['Dana cair bersih', rp(e.danaCairBersih)], ['Pendapatan kotor per peminjam per siklus', rp(e.pendapatanKotor)],
+    ['Biaya efektif untuk peminjam (' + sy.tenor + ' minggu, dari dana diterima)', pct(e.biayaEfektifPersen)],
+    ['Kerugian gagal bayar diasumsikan', rp(be.kerugian)], ['Biaya dana', rp(be.biayaDana)],
+    ['Margin per peminjam', rp(be.marginPerPeminjam)],
+    ['Break-even anggota per petugas per siklus', be.anggotaBreakEven === null ? 'belum dihitung: isi biaya_petugas_siklus di tab Parameter' : String(be.anggotaBreakEven)]
+  ].map(function (r) { return h('tr', {}, h('td', {}, r[0]), h('td', { class: 'r' }, r[1])); });
+  return h('div', {},
+    h('h1', {}, 'Dashboard ', h('span', { class: 'note' }, 'per ' + S.hari + ' WIB')),
+    h('div', { class: 'grid' },
+      kartu('Anggota', d.jumlahAnggota), kartu('Pinjaman berjalan', d.pinjamanBerjalan), kartu('Sisa tagihan (outstanding)', rp(d.outstanding)),
+      kartu('Tunggakan jatuh tempo', rp(d.tunggakan), d.tunggakan > 0 ? 'bad' : ''),
+      kartu('Telat lebih dari 30 hari', d.telatLebih30 + ' pinjaman', d.telatLebih30 ? 'bad' : '')),
+    h('h2', {}, 'Arus kas nyata (dari buku pembayaran)'),
+    h('div', { class: 'grid' },
+      kartu('Kas keluar (pokok dikurangi admin)', rp(d.kasKeluar)), kartu('Kas masuk (setoran)', rp(d.kasMasuk)),
+      kartu('Selisih kas', rp(d.kasMasuk - d.kasKeluar)),
+      kartu('Pendapatan terealisasi', rp(d.adminDiterima + d.bungaTerealisasi), '',
+        'Admin ' + rp(d.adminDiterima) + ' + bunga ' + rp(d.bungaTerealisasi) + '. Bunga diakui setelah pokok kembali (kebijakan hitung konservatif, bukan standar akuntansi).')),
+    h('h2', {}, 'Ekonomi produk (dari tab Parameter)'),
+    h('table', {}, h('tbody', {}, baris)),
+    h('p', { class: 'note' }, 'Break-even = biaya petugas per siklus dibagi margin per peminjam. Dihitung dari asumsi di tab Parameter.'));
+}
+
+function vAnggota() {
+  var namaPetugas = {};
+  S.petugas.forEach(function (p) { namaPetugas[p.id] = p.nama; });
+  var aktif = S.petugas.filter(function (p) { return p.aktif; });
+  return h('div', {}, h('h1', {}, 'Anggota'),
+    aktif.length === 0 ? h('div', { class: 'err' }, 'Belum ada petugas aktif. Isi tab Petugas di Google Sheet (id, nama, aktif) dulu.') : null,
+    h('form', { onsubmit: kirim('aksiTambahAnggota', function (fm) {
+      return { nama: f(fm, 'nama'), noHp: f(fm, 'noHp'), alamat: f(fm, 'alamat'), usaha: f(fm, 'usaha'), petugasId: f(fm, 'petugasId') };
+    }, 'Anggota ditambahkan.') },
+      h('label', {}, 'Nama', h('input', { name: 'nama', required: 'required' })),
+      h('label', {}, 'No. HP', h('input', { name: 'noHp' })),
+      h('label', {}, 'Alamat', h('input', { name: 'alamat' })),
+      h('label', {}, 'Usaha', h('input', { name: 'usaha' })),
+      h('label', {}, 'Petugas', h('select', { name: 'petugasId' }, aktif.map(function (p) { return h('option', { value: p.id }, p.nama); }))),
+      h('button', { class: 'aksi' }, 'Tambah')),
+    h('p', { class: 'note' }, 'Jangan simpan nomor KTP/NIK di sistem ini. Data pribadi lain seperlunya saja.'),
+    h('h2', {}, 'Daftar (' + S.anggota.length + ')'),
+    tabel(['ID', 'Nama', 'HP', 'Usaha', 'Petugas', 'Daftar', 'Status'],
+      S.anggota.map(function (a) { return h('tr', {}, [a.id, a.nama, a.noHp, a.usaha, namaPetugas[a.petugasId] || a.petugasId, a.tglDaftar, a.status].map(function (v) { return h('td', {}, v); })); })));
+}
+
+function vPinjaman() {
+  var sy = S.syarat, e = S.ekonomi;
+  return h('div', {}, h('h1', {}, 'Pinjaman'),
+    h('form', { onsubmit: kirim('aksiCairkan', function (fm) { return { anggotaId: f(fm, 'anggotaId'), tglCair: f(fm, 'tglCair') }; }, 'Pinjaman dicairkan.') },
+      h('label', {}, 'Anggota', h('select', { name: 'anggotaId' }, S.anggota.filter(function (a) { return a.status === 'aktif'; }).map(function (a) { return h('option', { value: a.id }, a.id + ' · ' + a.nama); }))),
+      h('label', {}, 'Tanggal cair', h('input', { type: 'date', name: 'tglCair', value: S.hari, required: 'required' })),
+      h('button', { class: 'aksi' }, 'Cairkan')),
+    h('p', { class: 'note' }, 'Syarat dari tab Parameter saat ini: pokok ' + rp(sy.pokok) + ', admin ' + rp(sy.admin) + ', bunga ' + sy.bungaPersen + '%, ' + sy.tenor +
+      ' minggu. Diterima ' + rp(e.danaCairBersih) + ', angsuran ' + rp(e.angsuran) + '/minggu. Syarat disalin ke baris pinjaman agar perubahan Parameter tidak mengubah pinjaman berjalan.'),
+    h('h2', {}, 'Daftar (' + S.pinjaman.length + ')'),
+    tabel(['ID', 'Anggota', 'Cair', 'Total', 'Terbayar', 'Sisa', 'Tunggakan', 'Telat (hari)', ''],
+      S.pinjaman.map(function (p) {
+        var s = p.status;
+        return h('tr', {},
+          h('td', {}, h('a', { class: 'lnk', onclick: function () { call('getDetail', p.id).then(function (d) { DETAIL = d; draw(); }).catch(function (er) { PESAN = { ok: false, teks: er.message }; draw(); }); } }, p.id)),
+          h('td', {}, p.anggota), h('td', {}, p.tglCair),
+          h('td', { class: 'r' }, rp(s.totalKewajiban)), h('td', { class: 'r' }, rp(s.terbayar)), h('td', { class: 'r' }, rp(s.sisa)),
+          h('td', { class: 'r ' + (s.tunggakan ? 'bad' : '') }, rp(s.tunggakan)),
+          h('td', { class: 'r ' + (s.hariTerlambat > 30 ? 'bad' : s.hariTerlambat ? 'warn' : '') }, s.hariTerlambat || '-'),
+          h('td', {}, s.lunas ? 'Lunas' : ''));
+      }), [3, 4, 5, 6, 7]));
+}
+
+function vDetail() {
+  var d = DETAIL, s = d.status;
+  return h('div', {},
+    h('p', {}, h('a', { class: 'lnk', onclick: function () { DETAIL = null; draw(); } }, '← Kembali ke daftar')),
+    h('h1', {}, d.id + ' · ' + d.anggota),
+    h('div', { class: 'grid' }, kartu('Total kewajiban', rp(s.totalKewajiban)), kartu('Terbayar', rp(s.terbayar)), kartu('Sisa', rp(s.sisa)), kartu('Tunggakan', rp(s.tunggakan), s.tunggakan ? 'bad' : '')),
+    h('h2', {}, 'Jadwal angsuran'),
+    tabel(['Ke', 'Jatuh tempo', 'Jumlah', 'Status'], d.jadwal.map(function (j) {
+      return h('tr', {}, h('td', {}, j.ke), h('td', {}, j.jatuhTempo), h('td', { class: 'r' }, rp(j.jumlah)), h('td', { class: j.status === 'Menunggak' ? 'bad' : '' }, j.status));
+    }), [2]),
+    h('h2', {}, 'Riwayat setoran'),
+    tabel(['ID', 'Tanggal', 'Jumlah', 'Catatan'], d.riwayat.map(function (b) {
+      return h('tr', {}, h('td', {}, b.id), h('td', {}, b.tgl), h('td', { class: 'r' }, rp(b.jumlah)), h('td', {}, b.catatan));
+    }), [2]));
+}
+
+function vSetoran() {
+  var aktif = S.pinjaman.filter(function (p) { return !p.status.lunas; });
+  var pj = {};
+  S.pinjaman.forEach(function (p) { pj[p.id] = p; });
+  return h('div', {}, h('h1', {}, 'Setoran Mingguan'),
+    h('form', { onsubmit: kirim('aksiSetoran', function (fm) {
+      return { pinjamanId: f(fm, 'pinjamanId'), tgl: f(fm, 'tgl'), jumlah: Number(f(fm, 'jumlah')), catatan: f(fm, 'catatan') };
+    }, 'Setoran dicatat.') },
+      h('label', {}, 'Pinjaman', h('select', { name: 'pinjamanId' }, aktif.map(function (p) {
+        return h('option', { value: p.id }, p.id + ' · ' + p.anggota + ' · sisa ' + rp(p.status.sisa) + (p.status.tunggakan ? ' · nunggak ' + rp(p.status.tunggakan) : ''));
+      }))),
+      h('label', {}, 'Tanggal', h('input', { type: 'date', name: 'tgl', value: S.hari, required: 'required' })),
+      h('label', {}, 'Jumlah (Rp)', h('input', { type: 'number', name: 'jumlah', step: '1', required: 'required' })),
+      h('label', {}, 'Catatan', h('input', { name: 'catatan' })),
+      h('button', { class: 'aksi' }, 'Catat')),
+    h('p', { class: 'note' }, 'Buku setoran hanya bertambah. Salah input? Catat baris baru dengan jumlah minus sebagai koreksi, jangan hapus baris di Sheet.'),
+    h('h2', {}, '20 setoran terakhir'),
+    tabel(['ID', 'Tanggal', 'Pinjaman', 'Anggota', 'Jumlah', 'Catatan'], S.setoranTerakhir.map(function (b) {
+      return h('tr', {}, h('td', {}, b.id), h('td', {}, b.tgl), h('td', {}, b.pinjamanId), h('td', {}, pj[b.pinjamanId] ? pj[b.pinjamanId].anggota : ''), h('td', { class: 'r' }, rp(b.jumlah)), h('td', {}, b.catatan));
+    }), [4]));
+}
+
+function vParameter() {
+  return h('div', {}, h('h1', {}, 'Parameter'),
+    h('p', { class: 'note' }, 'Hanya tampilan. Untuk mengubah, edit tab "Parameter" di Google Sheet; itu satu-satunya sumber kebenaran. Perubahan hanya berlaku untuk pinjaman baru.'),
+    tabel(['Kunci', 'Nilai', 'Keterangan'], S.parameter.map(function (p) {
+      return h('tr', {}, h('td', {}, p.key), h('td', { class: 'r' }, p.value), h('td', { class: String(p.keterangan).indexOf('ISI') === 0 ? 'warn' : '' }, p.keterangan));
+    }), [1]));
+}
+
+muat();
+</script>
+</body>
+</html>
