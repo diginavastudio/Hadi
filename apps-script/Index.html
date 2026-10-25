@@ -64,8 +64,17 @@ function call(fn) {
 }
 function muat() {
   return call('getState').then(function (s) { S = s; draw(); }).catch(function (e) {
-    document.getElementById('main').replaceChildren(h('div', { class: 'err' }, 'Gagal memuat: ' + e.message));
+    ganti(document.getElementById('main'), h('div', { class: 'err' }, 'Gagal memuat: ' + e.message));
   });
+}
+/** Mengganti isi elemen: array diratakan, null/undefined/false dibuang (replaceChildren akan menulis "null" / "[object ...]" bila tidak). */
+function ganti(el, anak) {
+  var node = [];
+  (function ratakan(x) {
+    if (Array.isArray(x)) x.forEach(ratakan);
+    else if (x !== null && x !== undefined && x !== false) node.push(x);
+  })(anak);
+  el.replaceChildren.apply(el, node);
 }
 function pesanBox() {
   if (!PESAN) return null;
@@ -95,12 +104,12 @@ function kartu(k, v, cls, catatan) {
 
 function draw() {
   var tabs = [['dashboard', 'Dashboard'], ['anggota', 'Anggota'], ['pinjaman', 'Pinjaman'], ['setoran', 'Setoran'], ['parameter', 'Parameter']];
-  document.getElementById('nav').replaceChildren(h('b', {}, 'Koperasi Mikro'),
+  ganti(document.getElementById('nav'), [h('b', {}, 'Koperasi Mikro'),
     tabs.map(function (t) { return h('button', { class: VIEW === t[0] ? 'on' : '', onclick: function () { VIEW = t[0]; DETAIL = null; draw(); } }, t[1]); }),
-    h('button', { onclick: function () { muat(); } }, 'Muat ulang'));
+    h('button', { onclick: function () { muat(); } }, 'Muat ulang')]);
   var m = document.getElementById('main');
   var views = { dashboard: vDashboard, anggota: vAnggota, pinjaman: vPinjaman, setoran: vSetoran, parameter: vParameter };
-  m.replaceChildren(pesanBox(), (VIEW === 'pinjaman' && DETAIL) ? vDetail() : views[VIEW]());
+  ganti(m, [pesanBox(), (VIEW === 'pinjaman' && DETAIL) ? vDetail() : views[VIEW]()]);
 }
 
 function vDashboard() {
